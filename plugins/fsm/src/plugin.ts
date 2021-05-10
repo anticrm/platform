@@ -19,18 +19,18 @@ import type { CoreService } from '@anticrm/platform-core'
 import BoardPresenter from './presenters/board/BoardPresenter.svelte'
 import VDocCardPresenter from './presenters/board/VDocCardPresenter.svelte'
 
-import type { FSM, FSMService, State, Transition, WithFSM } from '.'
+import type { FSM, FSMItem, FSMService, State, Transition, WithFSM } from '.'
 import fsmPlugin from '.'
 
 export default async (platform: Platform, deps: {core: CoreService}): Promise<FSMService> => {
   platform.setResource(fsmPlugin.component.BoardPresenter, BoardPresenter)
   platform.setResource(fsmPlugin.component.VDocCardPresenter, VDocCardPresenter)
 
-  const getStates = async (fsm: FSM): Promise<State[]> =>
-    await deps.core.find(fsmPlugin.class.State, { fsm: fsm._id as Ref<FSM> })
+  const getStates = async (fsm: Ref<FSM>): Promise<State[]> =>
+    await deps.core.find(fsmPlugin.class.State, { fsm })
 
-  const getTransitions = async (fsm: FSM): Promise<Transition[]> =>
-    await deps.core.find(fsmPlugin.class.Transition, { fsm: fsm._id as Ref<FSM> })
+  const getTransitions = async (fsm: Ref<FSM>): Promise<Transition[]> =>
+    await deps.core.find(fsmPlugin.class.Transition, { fsm })
       .then(xs => xs.filter((x): x is Transition => x !== undefined))
 
   const getTargetFSM = async (fsmOwner: WithFSM): Promise<FSM | undefined> => {
@@ -40,7 +40,14 @@ export default async (platform: Platform, deps: {core: CoreService}): Promise<FS
   return {
     getStates,
     getTransitions,
-    addStateItem: async (fsmOwner: WithFSM, item: Ref<VDoc>, clazz: Ref<Class<VDoc>>, space?: Ref<Space>) => {
+    addStateItem: async <T extends FSMItem>(
+      fsmOwner: WithFSM,
+      item: {
+        _class?: Ref<Class<T>>
+        obj: Omit<T, keyof VDoc | 'state' | 'fsm'> & {state?: Ref<State>}
+      },
+      space?: Ref<Space>
+    ) => {
       // TODO: we need to make sure that new FSMItem is only referring to specific item
       const fsm = await getTargetFSM(fsmOwner)
 
@@ -48,17 +55,15 @@ export default async (platform: Platform, deps: {core: CoreService}): Promise<FS
         return
       }
 
-      const states = await getStates(fsm)
-      const targetState = states[0]
+      const state = item.obj.state ?? (await getStates(fsm._id as Ref<FSM>))[0]._id as Ref<State>
 
-      return await deps.core.create(fsmPlugin.class.FSMItem, {
+      return await deps.core.create(item._class ?? fsmPlugin.class.FSMItem, {
         _createdBy: deps.core.getUserId() as StringProperty,
         _createdOn: Date.now() as DateProperty,
         _space: space ?? fsmOwner._id as Ref<Space>,
-        clazz,
-        item,
+        ...item.obj,
         fsm: fsmOwner._id as Ref<WithFSM>,
-        state: targetState._id as Ref<State>
+        state
       })
     },
     removeStateItem: async (item: Ref<VDoc>, fsmOwner: WithFSM) => {
@@ -73,8 +78,8 @@ export default async (platform: Platform, deps: {core: CoreService}): Promise<FS
         return undefined
       }
 
-      const transitions = await getTransitions(fsm)
-      const states = await getStates(fsm)
+      const transitions = await getTransitions(fsm._id as Ref<FSM>)
+      const states = await getStates(fsm._id as Ref<FSM>)
 
       const newFSM = await deps.core.create(
         fsmPlugin.class.FSM,

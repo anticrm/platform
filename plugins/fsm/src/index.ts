@@ -48,14 +48,22 @@ export interface FSMItem extends VDoc {
 export interface State extends VDoc {
   name: string
   fsm: Ref<FSM>
+  color: string
 }
 
 export interface FSMService extends Service {
-  getStates: (fsm: FSM) => Promise<State[]>
-  getTransitions: (fsm: FSM) => Promise<Transition[]>
+  getStates: (fsm: Ref<FSM>) => Promise<State[]>
+  getTransitions: (fsm: Ref<FSM>) => Promise<Transition[]>
 
   removeStateItem: (item: Ref<VDoc>, fsmOwner: WithFSM) => Promise<void>
-  addStateItem: (fsmOwner: WithFSM, item: Ref<VDoc>, clazz: Ref<Class<VDoc>>) => Promise<FSMItem | undefined>
+  addStateItem: <T extends FSMItem>(
+    fsmOwner: WithFSM,
+    item: {
+      _class?: Ref<Class<T>>
+      obj: Omit<T, keyof VDoc | 'state' | 'fsm'> & {state?: Ref<State>}
+    },
+    space?: Ref<Space>
+  ) => Promise<FSMItem | undefined>
 
   duplicateFSM: (fsm: Ref<FSM>) => Promise<FSM | undefined>
 }
